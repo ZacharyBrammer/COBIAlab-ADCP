@@ -7,7 +7,7 @@ import datetime
 #print "Data written at :", str(datetime.datetime.now())
 
 ser1in = serial.Serial('/dev/ttyUSB0',115200) #open data incoming serial port
-print "Opening vadcp serial port: ", ser1in.name #check correct serial port was opened
+print("Opening vadcp serial port: ", ser1in.name) #check correct serial port was opened
 
 #ser1out = serial.Serial('/dev/ttyUSB1',4800) #open send data port
 #print "Opening send data serial port: ", ser1out.name
@@ -23,6 +23,6 @@ while read_byte1 is not None:  #loop over serial port
 	vadcp1.write(read_byte1) #write data to file
 	vadcp1.close() #close file
 	vadcp1 = open(datafile,'a') #reopen file
-	print "Data written at :", str(datetime.datetime.now()),"to ",str(vadcp1.name)
+	print("Data written at :", str(datetime.datetime.now()),"to ",str(vadcp1.name))
 	#ser1out.write(read_byte1)
 
