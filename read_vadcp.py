@@ -14,7 +14,7 @@ print("Opening vadcp serial port: ", ser1in.name) #check correct serial port was
 
 datafile='/home/cobialab/measurements/measurements'
 
-vadcp1 = open(datafile,'a') #open file for writing
+vadcp1 = open(datafile,'ab') #open file for writing
 
 read_byte1 = ser1in.read() 
 count = 0
@@ -22,7 +22,7 @@ while read_byte1 is not None:  #loop over serial port
 	read_byte1 = ser1in.read() #read data from serial port
 	vadcp1.write(read_byte1) #write data to file
 	vadcp1.close() #close file
-	vadcp1 = open(datafile,'a') #reopen file
+	vadcp1 = open(datafile,'ab') #reopen file
 	print("Data written at :", str(datetime.datetime.now()),"to ",str(vadcp1.name))
 	#ser1out.write(read_byte1)
 
