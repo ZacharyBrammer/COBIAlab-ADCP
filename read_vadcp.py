@@ -12,7 +12,7 @@ print("Opening vadcp serial port: ", ser1in.name) #check correct serial port was
 #ser1out = serial.Serial('/dev/ttyUSB1',4800) #open send data port
 #print "Opening send data serial port: ", ser1out.name
 
-datafile='/home/cobialab/measurements/measurements'
+datafile='/home/cobialab/measurements/measurements.000'
 
 vadcp1 = open(datafile,'ab') #open file for writing
 
