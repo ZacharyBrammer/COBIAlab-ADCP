@@ -1,8 +1,9 @@
 #!/usr/pbin/python
 #Read VADCP data from serial port and save to file
 
-import serial
 import datetime
+
+import serial
 
 #print "Data written at :", str(datetime.datetime.now())
 
