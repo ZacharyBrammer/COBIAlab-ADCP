@@ -1,8 +1,6 @@
 function adcp=decode_bin(fname)
 
 %start by getting first data batch
-CHECK = 0;
-tic;
 fid = fopen(fname);
 bufferSize = 1e6;
 eoe = 127;
@@ -18,7 +16,6 @@ end
 data = [dataBatch; dataIncrement(1:end-1)];
 
 cum_index=0;
-trip=0;
 
 while ~isempty(data)
     test=dec2hex(data);
@@ -47,8 +44,6 @@ while ~isempty(data)
     end
 
     data = [dataBatch; dataIncrement];
-
-    %trip=trip+1
 end
 
 %%
