@@ -181,7 +181,7 @@ for ii=1:length(ens_index)-1
         ens.intens(:,:,ii)    =temp_intens(:,1:3);
 
         %percent good
-        offset=hdr.dat_offsets(7);
+        offset=ens_offset+hdr.dat_offsets(7);
         fseek(fid,offset,'bof');
         cfgid=fread(fid,2,'uint8');
         %fprintf('%s%s%s\n','ID : ', dec2hex(cfgid(2),2),dec2hex(cfgid(1),2));

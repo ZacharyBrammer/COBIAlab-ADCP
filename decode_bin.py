@@ -2,7 +2,8 @@ import argparse
 import os
 import struct
 from dataclasses import dataclass, field
-from typing import Optional
+from datetime import datetime
+from typing import ClassVar, Optional
 
 import h5py
 import numpy as np
@@ -199,15 +200,15 @@ class Config:
         c.bin1_dist = struct.unpack("H", bytes[32:34])[0] * 0.01
         c.fls_target_threshold = bytes[38]
         c.xmit_lag = struct.unpack("H", bytes[40:42])[0] * 0.01
-        
+
         # Documentation says this is just byte 51?
         c.bandwidth = struct.unpack("H", bytes[50:52])[0] * 0.01
-        
+
         c.syspower = bytes[52]
         c.sernum = struct.unpack("I", bytes[54:58])[0]
-        
+
         # c.b_angle = bytes[58] - I checked the documentation and this is outside the size of the config data and value returned by matlab is just the ID for the next chunk of data
-        
+
         c.ranges = np.arange(c.n_cells) * c.cell_size + c.bin1_dist
 
         return c
@@ -216,58 +217,135 @@ class Config:
 @dataclass
 class Ensemble:
     """Class for storing and decoding ensemble data"""
-    config: Config | None = None
-    config_length = 58  # Fixed length from operation manual
-
-    def __init__(self):
-        self.datatypes = None
-        self.dat_offsets = None
-        self.number = None
-        self.mtime = None
-        self.depth = None
-        self.salinity = None
-        self.temperature = None
-        self.mpt = None
-        self.voltage = None
-        self.x_vel = None
-        self.y_vel = None
-        self.z_vel = None
-        self.corr = None
-        self.intens = None
-        self.perc_good = None
-        self.surface_track = None
-        self.surface_track_uncorr = None
-        self.v_amp = None
-        self.v_pgood = None
+    config: ClassVar[Optional[Config]] = None
+    config_length: int = 58  # Fixed length from operation manual
+    datatypes: int = 0
+    dat_offsets: tuple = field(default_factory=tuple)
+    number: int = 0
+    mtime: float = 0.0
+    depth: float = 0.0
+    salinity: int = 0
+    temperature: float = 0.0
+    mpt: float = 0.0
+    voltage: float = 0.0
+    x_vel: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    y_vel: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    z_vel: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    corr: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    intens: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    perc_good: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    surface_track: float = 0.0
+    surface_track_uncorr: float = 0.0
+    v_amp: int = 0
+    v_pgood: int = 0
 
     @classmethod
     def from_bytes(cls, bytes):
         e = cls()
 
         # Read header
-        print(len(bytes))
-        cfgid = bytes[:2]
-        print(cfgid)
-        print(struct.unpack("2B", cfgid))
-        numbytes = bytes[2:4]
-        realnumbytes = struct.unpack("<h", numbytes)
-        print(realnumbytes)
+        # cfgid = struct.unpack("2B", bytes[:2])
+        # numbytes = bytes[2:4]
         datatypes = struct.unpack("b", bytes[5:6])[0]
         e.datatypes = datatypes
-        print(e.datatypes)
 
         dat_offsets = struct.unpack(
             f"<{datatypes}h", bytes[6:6 + 2 * datatypes])
         e.dat_offsets = dat_offsets
-        print(dat_offsets)
 
         # If config data is missing, set
         if not cls.config:
-            print(dat_offsets[0] + cls.config_length)
             cls.config = Config.from_bytes(
                 bytes[dat_offsets[0]:dat_offsets[0] + cls.config_length])
 
         # Decode the rest of the data
+        # Datatypes through voltage
+        # Offset used to make indexing significantly easier
+        offset = dat_offsets[1]
+        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        offset += 2
+
+        e.number = struct.unpack("H", bytes[offset:offset+2])[0]
+        offset += 2
+
+        rtc = struct.unpack("7B", bytes[offset:offset + 7])
+        e.mtime = datetime(rtc[0] + 2000, rtc[1], rtc[2],
+                           rtc[3], rtc[4], rtc[5]).timestamp()
+        offset += 12  # RTC length + 5 unused bytes
+
+        e.depth = struct.unpack("H", bytes[offset:offset+2])[0] * 0.1
+        offset += 8  # depth length + 6 unused bytes
+
+        e.salinity = struct.unpack("h", bytes[offset:offset+2])[0]
+        offset += 2
+
+        e.temperature = struct.unpack("h", bytes[offset:offset+2])[0] * 0.01
+        offset += 2
+
+        sleep = struct.unpack("3B", bytes[offset:offset+3])
+        # Converts to seconds
+        e.mpt = np.sum(np.multiply(sleep, (60, 1, 0.01)))
+        offset += 12  # sleep length + 9 unused bytes
+
+        e.voltage = bytes[offset] * 157 / 1000
+
+        # Velocity data
+        n_cells = cls.config.n_cells
+        offset = dat_offsets[2]
+        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        offset += 2
+
+        vels = np.frombuffer(bytes, dtype=np.int16, count=4 *
+                             n_cells, offset=offset).reshape((n_cells, 4)) * 0.001
+        e.x_vel = vels[:, 0].copy()
+        e.y_vel = vels[:, 1].copy()
+        e.z_vel = vels[:, 2].copy()
+        offset += 4 * n_cells
+
+        # Correlation data
+        offset = dat_offsets[4]
+        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        offset += 2
+
+        corr = np.frombuffer(bytes, dtype=np.uint8, count=4 *
+                             n_cells, offset=offset).reshape((n_cells, 4))
+        e.corr = corr[:, 0:3]
+
+        # Intensity data
+        offset = dat_offsets[5]
+        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        offset += 2
+
+        intens = np.frombuffer(
+            bytes, dtype=np.uint8, count=4 * n_cells, offset=offset).reshape((n_cells, 4))
+        e.intens = intens[:, 0:3]
+
+        # Percent good data
+        offset = dat_offsets[6]
+        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        offset += 2
+
+        perc_good = np.frombuffer(
+            bytes, dtype=np.uint8, count=4 * n_cells, offset=offset).reshape((n_cells, 4))
+        e.perc_good = perc_good[:, 0:3]
+
+        # Surface track data
+        offset = dat_offsets[10]
+        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        offset += 2
+
+        e.surface_track = struct.unpack(
+            "I", bytes[offset:offset + 4])[0] * 0.0001
+        offset += 4
+
+        e.surface_track_uncorr = struct.unpack(
+            "I", bytes[offset:offset + 4])[0] * 0.0001
+        offset += 5  # ununcorrected surface length + 1 unused byte
+
+        e.v_amp = bytes[offset]
+        offset += 1
+
+        e.v_pgood = bytes[offset]
 
         return e
 
