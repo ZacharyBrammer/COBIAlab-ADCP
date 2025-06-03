@@ -1,7 +1,7 @@
 import argparse
 import os
 import struct
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import ClassVar, Optional
 
@@ -23,6 +23,10 @@ if os.path.exists(path):
     pass
 else:
     raise FileNotFoundError("Invalid Path Provided")
+
+# Variable for batch writing size
+# TODO: Make change based on available memory, will do calculations based on max ensemble size of 2070B
+batch_size = 1024
 
 
 # Convert file to readable data
@@ -109,42 +113,79 @@ def decode_bin(path):
     # Reset to head of file
     file.seek(0, 0)
 
-    print(ens_indexes)
+    # Get the length of an ensemble
+    file.seek(ens_indexes[0] + 2, 0)
+    numbytes = struct.unpack("<h", file.read(2))[0]
 
+    # Decode the first ensemble to get config and structure data
     file.seek(ens_indexes[0], 0)
-    # print(file.tell())
-    cfgid = file.read(2)
-    # print(cfgid)
-    # print(struct.unpack("2B", cfgid))
-    numbytes = file.read(2)
-    # print(numbytes)
-    realnumbytes = struct.unpack("<h", numbytes)
-    # print(realnumbytes)
-    # print(file.tell())
-    file.seek(1, 1)
-    datatypes = file.read(1)
-    # print(datatypes)
-    # print(struct.unpack("b", datatypes))
-    num_data_types = struct.unpack("b", datatypes)[0]
-    # print(file.tell())
-    dat_offsets = file.read(2 * num_data_types)
-    # print(file.tell())
-    # print(struct.unpack(f"<{num_data_types}h", dat_offsets))
-    # INDEXES FOR SENDING TO CLASS
-    ens_start_end = (ens_indexes[0], ens_indexes[0] + realnumbytes[0])
-    # print(ens_start_end)
-
-    file.seek(ens_indexes[0], 0)
-    ens_dat = file.read(realnumbytes[0])
-    # print(len(ens_dat))
-    # print(file.tell())
-
+    ens_dat = file.read(numbytes)
     ens = Ensemble.from_bytes(ens_dat)
 
-    """
+    if not Ensemble.config:
+        raise EnsembleFormatError(
+            "Configuration data missing from first ensemble")
+
+    # Needed for velocity shapes
+    n_cells = Ensemble.config.n_cells
+
     # Set up structure of HDF5 file
-    with h5py.File(f"{path}.hdf5", "w") as f:
-        pass
+    with h5py.File(f"{path[:-4]}.hdf5", "w") as f:
+        config_group = f.create_group("config")
+        # TODO: Set up manually instead of this bs. strings will be dtype=h5py.string_dtype(encoding="ascii", length=20)
+        for field, value in asdict(Ensemble.config).items():
+            if isinstance(value, np.ndarray):
+                config_group.create_dataset(field, data=value)
+            else:
+                config_group.attrs[field] = value
+
+        ens_group = f.create_group("ensembles")
+        ens_group.create_dataset("number", shape=(
+            0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("mtime", shape=(
+            0,), dtype="float64", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("depth", shape=(
+            0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("salinity", shape=(
+            0,), dtype="int16", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("temperature", shape=(
+            0,), dtype="int16", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("mpt", shape=(
+            0,), dtype="float64", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("voltage", shape=(
+            0,), dtype="float32", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="float64", chunks=(
+            batch_size, n_cells), maxshape=(None, n_cells))
+        ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="float64", chunks=(
+            batch_size, n_cells), maxshape=(None, n_cells))
+        ens_group.create_dataset("z_vel", shape=(0, n_cells), dtype="float64", chunks=(
+            batch_size, n_cells), maxshape=(None, n_cells))
+        ens_group.create_dataset("corr", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+            batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
+        ens_group.create_dataset("intens", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+            batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
+        ens_group.create_dataset("perc_good", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+            batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
+        ens_group.create_dataset("surface_track", shape=(
+            0,), dtype="float32", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("surface_track_uncorr", shape=(
+            0,), dtype="float32", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("v_amp", shape=(
+            0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
+        ens_group.create_dataset("v_pgood", shape=(
+            0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
+
+    """
+    enss = []
+
+    for i in range(len(ens_indexes)):
+        file.seek(ens_indexes[i], 0)
+        ens_dat = file.read(numbytes)
+        ens = Ensemble.from_bytes(ens_dat)
+        enss.append(ens)
+
+    for ens in enss:
+        print(ens.number)
     """
 
 
@@ -221,23 +262,29 @@ class Ensemble:
     config_length: int = 58  # Fixed length from operation manual
     datatypes: int = 0
     dat_offsets: tuple = field(default_factory=tuple)
-    number: int = 0
-    mtime: float = 0.0
-    depth: float = 0.0
-    salinity: int = 0
-    temperature: float = 0.0
-    mpt: float = 0.0
-    voltage: float = 0.0
-    x_vel: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    y_vel: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    z_vel: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    corr: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    intens: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    perc_good: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    surface_track: float = 0.0
-    surface_track_uncorr: float = 0.0
-    v_amp: int = 0
-    v_pgood: int = 0
+    number: np.uint16 = np.uint16(0)
+    mtime: np.float64 = np.float64(0.0)
+    depth: np.float32 = np.float32(0.0)
+    salinity: np.int16 = np.int16(0)
+    temperature: np.float32 = np.float32(0.0)
+    mpt: np.float64 = np.float64(0.0)
+    voltage: np.float32 = np.float32(0.0)
+    x_vel: np.ndarray = field(
+        default_factory=lambda: np.zeros(1, dtype=np.float64))
+    y_vel: np.ndarray = field(
+        default_factory=lambda: np.zeros(1, dtype=np.float64))
+    z_vel: np.ndarray = field(
+        default_factory=lambda: np.zeros(1, dtype=np.float64))
+    corr: np.ndarray = field(
+        default_factory=lambda: np.zeros(1, dtype=np.uint8))
+    intens: np.ndarray = field(
+        default_factory=lambda: np.zeros(1, dtype=np.uint8))
+    perc_good: np.ndarray = field(
+        default_factory=lambda: np.zeros(1, dtype=np.uint8))
+    surface_track: np.float32 = np.float32(0.0)
+    surface_track_uncorr: np.float32 = np.float32(0.0)
+    v_amp: np.uint8 = np.uint8(0)
+    v_pgood: np.uint8 = np.uint8(0)
 
     @classmethod
     def from_bytes(cls, bytes):
@@ -269,17 +316,19 @@ class Ensemble:
         offset += 2
 
         rtc = struct.unpack("7B", bytes[offset:offset + 7])
-        e.mtime = datetime(rtc[0] + 2000, rtc[1], rtc[2],
-                           rtc[3], rtc[4], rtc[5]).timestamp()
+        e.mtime = np.float64(datetime(rtc[0] + 2000, rtc[1], rtc[2],
+                                      rtc[3], rtc[4], rtc[5]).timestamp())
         offset += 12  # RTC length + 5 unused bytes
 
-        e.depth = struct.unpack("H", bytes[offset:offset+2])[0] * 0.1
+        e.depth = np.float32(struct.unpack(
+            "H", bytes[offset:offset+2])[0] * 0.1)
         offset += 8  # depth length + 6 unused bytes
 
-        e.salinity = struct.unpack("h", bytes[offset:offset+2])[0]
+        e.salinity = np.int16(struct.unpack("h", bytes[offset:offset+2])[0])
         offset += 2
 
-        e.temperature = struct.unpack("h", bytes[offset:offset+2])[0] * 0.01
+        e.temperature = np.float32(struct.unpack(
+            "h", bytes[offset:offset+2])[0] * 0.01)
         offset += 2
 
         sleep = struct.unpack("3B", bytes[offset:offset+3])
@@ -287,7 +336,7 @@ class Ensemble:
         e.mpt = np.sum(np.multiply(sleep, (60, 1, 0.01)))
         offset += 12  # sleep length + 9 unused bytes
 
-        e.voltage = bytes[offset] * 157 / 1000
+        e.voltage = np.float32(bytes[offset] * 157 / 1000)
 
         # Velocity data
         n_cells = cls.config.n_cells
@@ -334,20 +383,26 @@ class Ensemble:
         # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
         offset += 2
 
-        e.surface_track = struct.unpack(
-            "I", bytes[offset:offset + 4])[0] * 0.0001
+        e.surface_track = np.float32(struct.unpack(
+            "I", bytes[offset:offset + 4])[0] * 0.0001)
         offset += 4
 
-        e.surface_track_uncorr = struct.unpack(
-            "I", bytes[offset:offset + 4])[0] * 0.0001
+        e.surface_track_uncorr = np.float32(struct.unpack(
+            "I", bytes[offset:offset + 4])[0] * 0.0001)
         offset += 5  # ununcorrected surface length + 1 unused byte
 
-        e.v_amp = bytes[offset]
+        e.v_amp = np.uint8(bytes[offset])
         offset += 1
 
-        e.v_pgood = bytes[offset]
+        e.v_pgood = np.uint8(bytes[offset])
 
         return e
+
+
+# TODO: Add these whenever checking cfgid to make sure data headers match up
+class EnsembleFormatError(Exception):
+    """Raised when ensemble configuration is missing or invalid, other formatting errors"""
+    pass
 
 
 decode_bin(path)
