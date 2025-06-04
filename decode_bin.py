@@ -1,7 +1,7 @@
 import argparse
 import os
 import struct
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import ClassVar, Optional
 
@@ -125,20 +125,43 @@ def decode_bin(path):
     if not Ensemble.config:
         raise EnsembleFormatError(
             "Configuration data missing from first ensemble")
+    cfg = Ensemble.config
 
     # Needed for velocity shapes
     n_cells = Ensemble.config.n_cells
 
     # Set up structure of HDF5 file
     with h5py.File(f"{path[:-4]}.hdf5", "w") as f:
-        config_group = f.create_group("config")
-        # TODO: Set up manually instead of this bs. strings will be dtype=h5py.string_dtype(encoding="ascii", length=20)
-        for field, value in asdict(Ensemble.config).items():
-            if isinstance(value, np.ndarray):
-                config_group.create_dataset(field, data=value)
-            else:
-                config_group.attrs[field] = value
+        # Config data
+        cfg_group = f.create_group("config")
+        cfg_group.attrs.create("name", data="vadcp")
+        cfg_group.attrs.create("sourceprog", data="instrument")
+        cfg_group.attrs.create("prog_ver", data=cfg.prog_ver)
+        cfg_group.attrs.create("config", data=cfg.config)
+        cfg_group.attrs.create("n_beams", data=cfg.n_beams)
+        cfg_group.attrs.create("n_cells", data=cfg.n_cells)
+        cfg_group.attrs.create("pings_per_ensemble",
+                               data=cfg.pings_per_ensemble)
+        cfg_group.attrs.create("cell_size", data=cfg.cell_size)
+        cfg_group.attrs.create("blank", data=cfg.blank)
+        cfg_group.attrs.create("corr_threshold", data=cfg.corr_threshold)
+        cfg_group.attrs.create("n_codereps", data=cfg.n_codereps)
+        cfg_group.attrs.create("evel_threshold", data=cfg.evel_threshold)
+        cfg_group.attrs.create("time_between_ping_groups",
+                               data=cfg.time_between_ping_groups)
+        cfg_group.attrs.create("coord", data=cfg.coord)
+        cfg_group.attrs.create("sensors_src", data=cfg.sensors_src)
+        cfg_group.attrs.create("sensors_avail", data=cfg.sensors_avail)
+        cfg_group.attrs.create("bin1_dist", data=cfg.bin1_dist)
+        cfg_group.attrs.create("fls_target_threshold",
+                               data=cfg.fls_target_threshold)
+        cfg_group.attrs.create("xmit_lag", data=cfg.xmit_lag)
+        cfg_group.attrs.create("bandwidth", data=cfg.bandwidth)
+        cfg_group.attrs.create("syspower", data=cfg.syspower)
+        cfg_group.attrs.create("sernum", data=cfg.sernum)
+        ds = cfg_group.create_dataset("ranges", data=cfg.ranges)
 
+        # Ensemble data
         ens_group = f.create_group("ensembles")
         ens_group.create_dataset("number", shape=(
             0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
@@ -192,8 +215,6 @@ def decode_bin(path):
 @dataclass
 class Config:
     """Class for storing and decoding config data"""
-    name: str = "vadcp"
-    sourceprog: str = "instrument"
     prog_ver: float = 0
     config: str = ""
     n_beams: int = 0
