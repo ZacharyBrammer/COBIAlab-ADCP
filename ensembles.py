@@ -112,7 +112,7 @@ class Ensemble:
         # Check that the header matches
         if cfgid != (127, 127):
             raise EnsembleFormatError("Header not at expected index")
-        
+
         # numbytes = bytes[2:4]
         datatypes = struct.unpack("b", bytes[5:6])[0]
         e.datatypes = datatypes
@@ -197,7 +197,7 @@ class Ensemble:
         # Check ID
         cfgid = struct.unpack("2B", bytes[offset:offset + 2])
         if cfgid != (0, 3):
-            raise EnsembleFormatError("Echo intensity ID not at expected index")
+            raise EnsembleFormatError("Echo ID not at expected index")
         offset += 2
 
         intens = np.frombuffer(
