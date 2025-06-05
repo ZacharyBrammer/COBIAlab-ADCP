@@ -102,7 +102,12 @@ class Ensemble:
         e = cls()
 
         # Read header
-        # cfgid = struct.unpack("2B", bytes[:2])
+        cfgid = struct.unpack("2B", bytes[:2])
+
+        # Check that the header matches
+        if cfgid != (127, 127):
+            raise EnsembleFormatError("Header not at expected index")
+        
         # numbytes = bytes[2:4]
         datatypes = struct.unpack("b", bytes[5:6])[0]
         e.datatypes = datatypes
@@ -120,7 +125,11 @@ class Ensemble:
         # Datatypes through voltage
         # Offset used to make indexing significantly easier
         offset = dat_offsets[1]
-        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        if cfgid != (128, 0):
+            raise EnsembleFormatError("Variable leader not at expected index")
         offset += 2
 
         e.number = struct.unpack("H", bytes[offset:offset+2])[0]
@@ -152,7 +161,11 @@ class Ensemble:
         # Velocity data
         n_cells = cls.config.n_cells
         offset = dat_offsets[2]
-        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        if cfgid != (0, 1):
+            raise EnsembleFormatError("Velocity ID not at expected index")
         offset += 2
 
         vels = np.frombuffer(bytes, dtype=np.int16, count=4 *
@@ -164,7 +177,10 @@ class Ensemble:
 
         # Correlation data
         offset = dat_offsets[4]
-        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        if cfgid != (0, 2):
+            raise EnsembleFormatError("Correlation ID not at expected index")
         offset += 2
 
         corr = np.frombuffer(bytes, dtype=np.uint8, count=4 *
@@ -173,7 +189,10 @@ class Ensemble:
 
         # Intensity data
         offset = dat_offsets[5]
-        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        if cfgid != (0, 3):
+            raise EnsembleFormatError("Echo intensity ID not at expected index")
         offset += 2
 
         intens = np.frombuffer(
@@ -182,7 +201,10 @@ class Ensemble:
 
         # Percent good data
         offset = dat_offsets[6]
-        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        if cfgid != (0, 4):
+            raise EnsembleFormatError("Percent good ID not at expected index")
         offset += 2
 
         perc_good = np.frombuffer(
@@ -191,7 +213,11 @@ class Ensemble:
 
         # Surface track data
         offset = dat_offsets[10]
-        # cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[offset:offset + 2])
+        if cfgid != (0, 64):
+            print(cfgid)
+            raise EnsembleFormatError("Surface track ID not at expected index")
         offset += 2
 
         e.surface_track = np.float32(struct.unpack(
