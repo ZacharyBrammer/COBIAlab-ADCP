@@ -38,6 +38,11 @@ class Config:
     def from_bytes(cls, bytes):
         c = cls()
 
+        # Check ID
+        cfgid = struct.unpack("2B", bytes[:2])
+        if cfgid != (0, 0):
+            raise EnsembleFormatError("Config ID not at expected index")
+
         prog_ver = struct.unpack("2B", bytes[2:4])
         c.prog_ver = prog_ver[0] + prog_ver[1] / 100
         c.config = f"{format(bytes[5], "08b")}-{format(bytes[4], "08b")}"
@@ -216,7 +221,6 @@ class Ensemble:
         # Check ID
         cfgid = struct.unpack("2B", bytes[offset:offset + 2])
         if cfgid != (0, 64):
-            print(cfgid)
             raise EnsembleFormatError("Surface track ID not at expected index")
         offset += 2
 
