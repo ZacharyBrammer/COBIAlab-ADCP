@@ -164,11 +164,13 @@ def decode_bin(path):
         ds = cfg_group.create_dataset("ranges", data=cfg.ranges)
 
         # Ensemble data
+        # TODO: dataset.attrs["units"], dataset.attrs["scale_factor"] where required
+        # TODO: also, fix datatypes
         ens_group = f.create_group("ensembles")
         ens_group.create_dataset("number", shape=(
             0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("mtime", shape=(
-            0,), dtype="float64", chunks=batch_size, maxshape=(None,))
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("depth", shape=(
             0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("salinity", shape=(
@@ -176,14 +178,14 @@ def decode_bin(path):
         ens_group.create_dataset("temperature", shape=(
             0,), dtype="int16", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("mpt", shape=(
-            0,), dtype="float64", chunks=batch_size, maxshape=(None,))
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("voltage", shape=(
-            0,), dtype="float32", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="float64", chunks=(
+            0,), dtype="uint8", chunks=batch_size, maxshape=(None,)) # Scaling needs to be 0.157
+        ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
-        ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="float64", chunks=(
+        ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
-        ens_group.create_dataset("z_vel", shape=(0, n_cells), dtype="float64", chunks=(
+        ens_group.create_dataset("z_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
         ens_group.create_dataset("corr", shape=(0, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
@@ -192,9 +194,9 @@ def decode_bin(path):
         ens_group.create_dataset("perc_good", shape=(0, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
         ens_group.create_dataset("surface_track", shape=(
-            0,), dtype="float32", chunks=batch_size, maxshape=(None,))
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,)) # Scaling needs to be 0.0001
         ens_group.create_dataset("surface_track_uncorr", shape=(
-            0,), dtype="float32", chunks=batch_size, maxshape=(None,))
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,)) # Same scaling
         ens_group.create_dataset("v_amp", shape=(
             0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("v_pgood", shape=(
