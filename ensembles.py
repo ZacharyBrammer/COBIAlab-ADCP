@@ -75,7 +75,7 @@ class Config:
 class Ensemble:
     """Class for storing and decoding ensemble data"""
     config: ClassVar[Optional[Config]] = None
-    config_length: int = 58  # Fixed length from operation manual
+    config_length: ClassVar[int] = 58  # Fixed length from operation manual
     datatypes: int = 0
     dat_offsets: np.ndarray = field(
         default_factory=lambda: np.zeros(1, dtype=np.int16))
@@ -235,10 +235,12 @@ class Ensemble:
             raise EnsembleFormatError("Surface track ID not at expected index")
         offset += 2
 
-        e.surface_track = np.frombuffer(bytes, dtype=np.uint32, count=1, offset=offset)[0]
+        e.surface_track = np.frombuffer(
+            bytes, dtype=np.uint32, count=1, offset=offset)[0]
         offset += 4
 
-        e.surface_track_uncorr = np.frombuffer(bytes, dtype=np.uint32, count=1, offset=offset)[0]
+        e.surface_track_uncorr = np.frombuffer(
+            bytes, dtype=np.uint32, count=1, offset=offset)[0]
         offset += 5  # ununcorrected surface length + 1 unused byte
 
         e.v_amp = np.uint8(bytes[offset])
@@ -305,9 +307,6 @@ class EnsembleWriter:
         batch_len = len(batch)
         if batch_len == 0:
             return
-
-        for ens in batch:
-            print(ens.number)
 
         # Fill buffers with batch data
         self.fill_arrays_from_batch(batch)

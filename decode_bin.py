@@ -4,7 +4,6 @@ import os
 import struct
 
 import h5py
-import numpy as np
 
 from ensembles import Ensemble, EnsembleFormatError, EnsembleWriter
 
@@ -33,80 +32,38 @@ batch_size = 1024
 def decode_bin(path):
     file = open(path, "rb")
 
-    # Get first data batch
-    buffer_size = int(1e6)
-    eoe = 127
-
-    # Get the end of the file (needed for when file is larger than buffer size)
-    file.seek(0, 2)
-    eof = file.tell()
-    file.seek(0, 0)  # Reset position
-
-    # Read a batch of data
-    batch = np.fromfile(file, dtype="uint8", count=buffer_size)
-
-    # Appending with numpy arrays is inefficient so use a list
-    increment = list(np.fromfile(file, dtype="uint8", count=2))
-
-    # Search until the next ensemble starts so nothing gets split
-    while (len(increment) < 2 or (increment[-1] != eoe and increment[-2] != eoe)) and (file.tell() != eof):
-        # Read the next byte
-        next_byte = file.read(1)
-
-        # If byte is empty, break from loop
-        if not next_byte:
-            break
-        increment.append(next_byte[0])
-
-    # Convert increment to ndarray and add to data
-    increment = np.array(increment, dtype="uint8")
-    data = np.concatenate((batch, increment[:-1]))
-
     # List for storing start index of each ensamble
     ens_indexes = []
+    current_offset = 0
 
-    # Offset for later batches
-    cumulative_index = 0
+    # Search the entire file for ensemble headers
+    while True:
+        # Get header ID, source ID, and numbytes
+        header = file.read(4)
 
-    # Search entire file for ensemble headers
-    while data.size > 0:
-        # Get index of all 7f values in the data
-        potentialIndexes = np.where(data == 0x7f)[0]
+        # End of file check
+        if len(header) < 4:
+            break
 
-        # Check find where there are two consecutive 7f values indicating an ensemble header
-        headers = (np.diff(potentialIndexes) == 1)
-        headers = np.append(headers, False)
+        # If the two start bytes are right (two 7f bytes in a row)
+        if header[0] == 0x7f and header[1] == 0x7f:
+            # Get ensemble size
+            ens_size = header[2] + (header[3] << 8) + 2
 
-        # Get index of all headers
-        headerIndexes = potentialIndexes[headers]
-        headerIndexes += cumulative_index
-
-        # Add header indexes to list, update offset
-        ens_indexes.extend(headerIndexes.tolist())
-        cumulative_index += data.size
-
-        print(f"{len(data)} bytes scanned with {len(headerIndexes)} ensembles.")
-
-        # Check the rest of the file by updating data
-        # Read a batch of data
-        batch = np.fromfile(file, dtype="uint8", count=buffer_size)
-
-        # Appending with numpy arrays is inefficient so use a list
-        increment = list(np.fromfile(file, dtype="uint8", count=2))
-
-        # Search until the next ensemble starts so nothing gets split
-        while (len(increment) < 2 or (increment[-1] != eoe and increment[-2] != eoe)) and (file.tell() != eof):
-            # Read the next byte
-            next_byte = file.read(1)
-
-            # If byte is empty, break from loop
-            if not next_byte:
-                break
-            increment.append(next_byte[0])
-
-        # Convert increment to ndarray and add to data
-        increment = np.array(increment, dtype="uint8")
-        data = np.concatenate((batch, increment[:-1]))
+            # If size is within expected bounds (removes potential errors from random 7f7f data)
+            if 32 <= ens_size <= 4096:
+                ens_indexes.append(current_offset)
+                current_offset += ens_size
+                file.seek(current_offset)
+                continue
+            else:
+                # Continue seeking
+                current_offset += 1
+                file.seek(current_offset)
+        else:
+            # Continue seeking
+            current_offset += 1
+            file.seek(current_offset)
 
     print(f"{len(ens_indexes)} ensembles found, processing")
 
@@ -180,7 +137,8 @@ def decode_bin(path):
         ens_group.create_dataset("mpt", shape=(
             0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("voltage", shape=(
-            0,), dtype="uint8", chunks=batch_size, maxshape=(None,)) # Scaling needs to be 0.157
+            # Scaling needs to be 0.157
+            0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
         ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="int16", chunks=(
@@ -194,9 +152,11 @@ def decode_bin(path):
         ens_group.create_dataset("perc_good", shape=(0, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
         ens_group.create_dataset("surface_track", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,)) # Scaling needs to be 0.0001
+            # Scaling needs to be 0.0001
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("surface_track_uncorr", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,)) # Same scaling
+            # Same scaling
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("v_amp", shape=(
             0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
         ens_group.create_dataset("v_pgood", shape=(
