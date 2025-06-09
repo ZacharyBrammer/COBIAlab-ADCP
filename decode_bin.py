@@ -5,7 +5,7 @@ import struct
 
 import h5py
 
-from ensembles import Ensemble, EnsembleFormatError, EnsembleWriter
+from ensembles import Config, Ensemble, EnsembleFormatError, EnsembleWriter
 
 # Command line argument for file path
 parser = argparse.ArgumentParser(
@@ -90,6 +90,37 @@ def decode_bin(path):
     fname = f"{path[:-4]}.hdf5"
 
     # Set up structure of HDF5 file
+    config_file(fname, n_cells, cfg)
+
+    # List for storing ensembles, add first ensemble
+    batch = []
+    batch.append(ens)
+
+    writer = EnsembleWriter(fname, batch_size, n_cells)
+
+    # For all ensembles, create object and write batches to file
+    for i in range(1, len(ens_indexes)):
+        file.seek(ens_indexes[i], 0)
+        ens_dat = file.read(numbytes)
+        ens = Ensemble.from_bytes(ens_dat)
+        batch.append(ens)
+
+        if len(batch) == batch_size:
+            writer.write_batch(batch)
+            # Clear batch list and free up memory
+            batch.clear()
+            gc.collect()
+
+    # Write any leftover batches
+    if batch:
+        writer.write_batch(batch)
+        # Clear batch list and free up memory
+        batch.clear()
+        gc.collect()
+
+
+def config_file(fname: str, n_cells: int, cfg: Config):
+    """Helper function for creating file to clean up main function a bit"""
     with h5py.File(fname, "w") as f:
         # Config data
         cfg_group = f.create_group("config")
@@ -121,72 +152,100 @@ def decode_bin(path):
         ds = cfg_group.create_dataset("ranges", data=cfg.ranges)
 
         # Ensemble data
-        # TODO: dataset.attrs["units"], dataset.attrs["scale_factor"] where required
-        # TODO: also, fix datatypes
         ens_group = f.create_group("ensembles")
-        ens_group.create_dataset("number", shape=(
+
+        ds = ens_group.create_dataset("number", shape=(
             0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("mtime", shape=(
+        add_metadata(ds, units="1", long_name="Ensemble Number")
+
+        ds = ens_group.create_dataset("mtime", shape=(
             0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("depth", shape=(
+        add_metadata(ds, units="seconds", long_name="Time")
+
+        ds = ens_group.create_dataset("depth", shape=(
             0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("salinity", shape=(
+        add_metadata(ds, units="meters",
+                     long_name="Transducer Depth", scale_factor=0.1)
+
+        ds = ens_group.create_dataset("salinity", shape=(
             0,), dtype="int16", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("temperature", shape=(
+        add_metadata(ds, units="ppt", long_name="Water Salinity")
+
+        ds = ens_group.create_dataset("temperature", shape=(
             0,), dtype="int16", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("mpt", shape=(
+        add_metadata(ds, units="degrees C",
+                     long_name="Water Temperature", scale_factor=0.01)
+
+        ds = ens_group.create_dataset("mpt", shape=(
             0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("voltage", shape=(
-            # Scaling needs to be 0.157
+        add_metadata(ds, units="seconds",
+                     long_name="Sleep Duration", scale_factor=0.01)
+
+        ds = ens_group.create_dataset("voltage", shape=(
             0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="int16", chunks=(
+        add_metadata(ds, units="volts",
+                     long_name="Battery Voltage", scale_factor=0.157)
+
+        ds = ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
-        ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="int16", chunks=(
+        add_metadata(ds, units="m/s",
+                     long_name="X Horizontal Velocity", scale_factor=0.001)
+
+        ds = ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
-        ens_group.create_dataset("z_vel", shape=(0, n_cells), dtype="int16", chunks=(
+        add_metadata(ds, units="m/s",
+                     long_name="Y Horizontal Velocity", scale_factor=0.001)
+
+        ds = ens_group.create_dataset("z_vel", shape=(0, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells))
-        ens_group.create_dataset("corr", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+        add_metadata(ds, units="m/s",
+                     long_name="Z Vertical Velocity", scale_factor=0.001)
+
+        ds = ens_group.create_dataset("corr", shape=(0, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
-        ens_group.create_dataset("intens", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+        add_metadata(ds, units="1", long_name="Correlation Magnitude")
+
+        ds = ens_group.create_dataset("intens", shape=(0, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
-        ens_group.create_dataset("perc_good", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+        add_metadata(ds, units="1", long_name="Echo Intensity")
+
+        ds = ens_group.create_dataset("perc_good", shape=(0, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3))
-        ens_group.create_dataset("surface_track", shape=(
-            # Scaling needs to be 0.0001
+        add_metadata(ds, units="percent", long_name="Percentage of Good Pings")
+
+        ds = ens_group.create_dataset("surface_track", shape=(
             0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("surface_track_uncorr", shape=(
-            # Same scaling
+        add_metadata(ds, units="meters",
+                     long_name="Corrected Depth from Surface Track", scale_factor=0.0001)
+
+        ds = ens_group.create_dataset("surface_track_uncorr", shape=(
             0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("v_amp", shape=(
+        add_metadata(ds, units="meters",
+                     long_name="Uncorrected Depth from Surface Track", scale_factor=0.0001)
+
+        ds = ens_group.create_dataset("v_amp", shape=(
             0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
-        ens_group.create_dataset("v_pgood", shape=(
+        add_metadata(ds, units="1", long_name="Signal Amplitude at Surface")
+
+        ds = ens_group.create_dataset("v_pgood", shape=(
             0,), dtype="uint8", chunks=batch_size, maxshape=(None,))
+        add_metadata(ds, units="percent",
+                     long_name="Percentage Good of Surface Track")
 
-    # List for storing ensembles, add first ensemble
-    batch = []
-    batch.append(ens)
 
-    writer = EnsembleWriter(fname, batch_size, n_cells)
-
-    # For all ensembles, create object and write batches to file
-    for i in range(1, len(ens_indexes)):
-        file.seek(ens_indexes[i], 0)
-        ens_dat = file.read(numbytes)
-        ens = Ensemble.from_bytes(ens_dat)
-        batch.append(ens)
-
-        if len(batch) == batch_size:
-            writer.write_batch(batch)
-            # Clear batch list and free up memory
-            batch.clear()
-            gc.collect()
-
-    # Write any leftover batches
-    if batch:
-        writer.write_batch(batch)
-        # Clear batch list and free up memory
-        batch.clear()
-        gc.collect()
+def add_metadata(
+    dataset: h5py.Dataset,
+    units: str | None = None,
+    long_name: str | None = None,
+    scale_factor: float | None = None
+):
+    """Helper function for adding metadata to datasets"""
+    if units:
+        dataset.attrs["units"] = units
+    if long_name:
+        dataset.attrs["long_name"] = long_name
+    if scale_factor:
+        dataset.attrs["scale_factor"] = scale_factor
 
 
 decode_bin(path)
