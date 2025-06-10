@@ -155,7 +155,7 @@ def config_file(fname: str, n_cells: int, cfg: Config):
         ens_group = f.create_group("ensembles")
 
         ds = ens_group.create_dataset("number", shape=(
-            0,), dtype="uint16", chunks=batch_size, maxshape=(None,))
+            0,), dtype="uint32", chunks=batch_size, maxshape=(None,))
         add_metadata(ds, units="1", long_name="Ensemble Number")
 
         ds = ens_group.create_dataset("mtime", shape=(

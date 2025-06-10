@@ -79,7 +79,7 @@ class Ensemble:
     datatypes: int = 0
     dat_offsets: np.ndarray = field(
         default_factory=lambda: np.zeros(1, dtype=np.int16))
-    number: np.uint16 = np.uint16(0)
+    number: np.uint32 = np.uint32(0)
     mtime: np.uint32 = np.uint32(0)
     depth: np.uint16 = np.uint16(0)
     salinity: np.int16 = np.int16(0)
@@ -131,16 +131,20 @@ class Ensemble:
         # Offset used to make indexing significantly easier
         offset = dat_offsets[1]
 
-        # Check ID
+        # Check ID (Bytes 1, 2)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 128 or cfgid[1] != 0:
             raise EnsembleFormatError("Variable leader not at expected index")
         offset += 2
 
-        e.number = np.frombuffer(
-            bytes, dtype=np.uint16, count=1, offset=offset)[0]
+        # Number is made up of bytes 3 and 4, with byte 12 for rollover
+        number = np.frombuffer(bytes, dtype=np.uint16,
+                               count=1, offset=offset)[0]
+        # Bitwise shift is faster and easier than multiplying and adding
+        e.number = np.uint32((bytes[11] << 16) | number)
         offset += 2
 
+        # Real time clock (Bytes 5-11)
         rtc = np.frombuffer(bytes, dtype=np.uint8, count=7, offset=offset)
         e.mtime = np.uint32(calendar.timegm((
             int(rtc[0]) + 2000,
@@ -153,24 +157,29 @@ class Ensemble:
         )))
         offset += 12  # RTC length + 5 unused bytes
 
+        # Depth (Bytes 17, 18)
         e.depth = np.frombuffer(bytes, dtype=np.uint16,
                                 count=1, offset=offset)[0]
         offset += 8  # depth length + 6 unused bytes
 
+        # Salinity (Bytes 25, 26)
         e.salinity = np.frombuffer(
             bytes, dtype=np.int16, count=1, offset=offset)[0]
         offset += 2
 
+        # Temperature (Bytes 27, 28)
         e.temperature = np.frombuffer(
             bytes, dtype=np.int16, count=1, offset=offset)[0]
         offset += 2
 
+        # Sleep (Bytes 29-31)
         sleep = np.frombuffer(bytes, dtype=np.uint8, count=3,
                               offset=offset).astype(np.uint32)
         # Converts to centi-seconds (hundredths are smallest value in data)
         e.mpt = sleep[0] * 6000 + sleep[1] * 100 + sleep[2]
         offset += 12  # sleep length + 9 unused bytes
 
+        # Battery voltage (Byte 41)
         # Scaling attached to file to save storage space
         e.voltage = bytes[offset]
 
@@ -178,74 +187,86 @@ class Ensemble:
         n_cells = cls.config.n_cells
         offset = dat_offsets[2]
 
-        # Check ID
+        # Check ID (Bytes 1, 2)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 0 or cfgid[1] != 1:
             raise EnsembleFormatError("Velocity ID not at expected index")
         offset += 2
 
+        # Velocity data (Bytes 3-4 * n_cells)
         vels = np.frombuffer(bytes, dtype=np.int16, count=4 *
                              n_cells, offset=offset).reshape((n_cells, 4))
         e.x_vel = vels[:, 0]
         e.y_vel = vels[:, 1]
         e.z_vel = vels[:, 2]
-        offset += 4 * n_cells
 
         # Correlation data
         offset = dat_offsets[4]
-        # Check ID
+
+        # Check ID (Bytes 1, 2)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 0 or cfgid[1] != 2:
             raise EnsembleFormatError("Correlation ID not at expected index")
         offset += 2
 
+        # Correlation data (Bytes 3-4 * n_cells)
         corr = np.frombuffer(bytes, dtype=np.uint8, count=4 *
                              n_cells, offset=offset).reshape((n_cells, 4))
         e.corr = corr[:, 0:3]
 
         # Intensity data
         offset = dat_offsets[5]
-        # Check ID
+
+        # Check ID (Bytes 1, 2)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 0 or cfgid[1] != 3:
             raise EnsembleFormatError("Echo ID not at expected index")
         offset += 2
 
+        # Intensity data (Bytes 3-4 * n_cells)
         intens = np.frombuffer(
             bytes, dtype=np.uint8, count=4 * n_cells, offset=offset).reshape((n_cells, 4))
         e.intens = intens[:, 0:3]
 
         # Percent good data
         offset = dat_offsets[6]
-        # Check ID
+
+        # Check ID (Bytes 1, 2)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 0 or cfgid[1] != 4:
             raise EnsembleFormatError("Percent good ID not at expected index")
         offset += 2
 
+        # Percent good data (Bytes 3-4 * n_cells)
         perc_good = np.frombuffer(
             bytes, dtype=np.uint8, count=4 * n_cells, offset=offset).reshape((n_cells, 4))
         e.perc_good = perc_good[:, 0:3]
 
         # Surface track data
         offset = dat_offsets[10]
-        # Check ID
+
+        # Check ID (Bytes 1, 2)
+        print(offset - dat_offsets[10] + 1)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 0 or cfgid[1] != 64:
             raise EnsembleFormatError("Surface track ID not at expected index")
         offset += 2
 
+        # Surface track (Bytes 3-6)
         e.surface_track = np.frombuffer(
             bytes, dtype=np.uint32, count=1, offset=offset)[0]
         offset += 4
 
+        # Uncorrected surface track (Bytes 7-10)
         e.surface_track_uncorr = np.frombuffer(
             bytes, dtype=np.uint32, count=1, offset=offset)[0]
         offset += 5  # ununcorrected surface length + 1 unused byte
 
+        # Amplitude at surface (Byte 12)
         e.v_amp = np.uint8(bytes[offset])
         offset += 1
 
+        # Percent good surface track (Byte 13)
         e.v_pgood = np.uint8(bytes[offset])
 
         return e
@@ -261,7 +282,7 @@ class EnsembleWriter:
 
         # Set up arrays in advance to save memory (not having to make new arrays each write)
         self.arrays: Dict[str, np.ndarray] = {
-            "number": np.empty(batch_size, dtype=np.uint16),
+            "number": np.empty(batch_size, dtype=np.uint32),
             "mtime": np.empty(batch_size, dtype=np.uint32),
             "depth": np.empty(batch_size, dtype=np.uint16),
             "salinity": np.empty(batch_size, dtype=np.int16),
