@@ -246,7 +246,6 @@ class Ensemble:
         offset = dat_offsets[10]
 
         # Check ID (Bytes 1, 2)
-        print(offset - dat_offsets[10] + 1)
         cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
         if cfgid[0] != 0 or cfgid[1] != 64:
             raise EnsembleFormatError("Surface track ID not at expected index")
