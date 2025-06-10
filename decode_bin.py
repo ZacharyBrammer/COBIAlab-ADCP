@@ -4,6 +4,7 @@ import os
 import struct
 
 import h5py
+import psutil
 
 from ensembles import Config, Ensemble, EnsembleFormatError, EnsembleWriter
 
@@ -23,9 +24,9 @@ if os.path.exists(path):
 else:
     raise FileNotFoundError("Invalid Path Provided")
 
-# Variable for batch writing size
-# TODO: Make change based on available memory, will do calculations based on max ensemble size of 2070B
-batch_size = 1024
+# Variable for batch writing size. Value was determined by benchmarking. 
+# With 4096 max sized ensembles that would be ~3MB of data in RAM, which any modern system should be capable of
+batch_size = 4096
 
 
 # Convert file to readable data
