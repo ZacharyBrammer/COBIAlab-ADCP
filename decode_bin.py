@@ -4,27 +4,10 @@ import os
 import struct
 
 import h5py
-import psutil
 
 from ensembles import Config, Ensemble, EnsembleFormatError, EnsembleWriter
 
-# Command line argument for file path
-parser = argparse.ArgumentParser(
-    prog="DecodeADCP",
-    description="Parses VADCP output data and decodes it"
-)
-
-parser.add_argument(dest="path", help="Path to data file")
-args = parser.parse_args()
-
-# Get path from arguments, make sure file exists
-path = args.path
-if os.path.exists(path):
-    pass
-else:
-    raise FileNotFoundError("Invalid Path Provided")
-
-# Variable for batch writing size. Value was determined by benchmarking. 
+# Variable for batch writing size. Value was determined by benchmarking.
 # With 4096 max sized ensembles that would be ~3MB of data in RAM, which any modern system should be capable of
 batch_size = 4096
 
@@ -249,4 +232,22 @@ def add_metadata(
         dataset.attrs["scale_factor"] = scale_factor
 
 
-decode_bin(path)
+def main():
+    # Command line argument for file path
+    parser = argparse.ArgumentParser(
+        prog="DecodeADCP",
+        description="Parses VADCP output data and decodes it"
+    )
+
+    parser.add_argument("path", help="Path to data file")
+    args = parser.parse_args()
+
+    # Get path from arguments, make sure file exists
+    path = args.path
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Invalid Path Provided {path}")
+
+    decode_bin(path)
+
+if __name__ == "__main__":
+    main()
