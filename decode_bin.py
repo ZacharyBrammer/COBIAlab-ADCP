@@ -4,6 +4,7 @@ import os
 import struct
 
 import h5py
+from tqdm import tqdm
 
 from ensembles import Config, Ensemble, EnsembleFormatError, EnsembleWriter
 
@@ -15,10 +16,22 @@ batch_size = 4096
 # Convert file to readable data
 def decode_bin(path):
     file = open(path, "rb")
+    # Get file size for progress bar
+    file.seek(0, 2)
+    file_size = file.tell()
+    file.seek(0)
 
     # List for storing start index of each ensamble
     ens_indexes = []
     current_offset = 0
+
+    # Set up progress bar
+    scan_progress = tqdm(
+        total=file_size,
+        unit="B",
+        unit_scale=True,
+        desc="Scanning file"
+    )
 
     # Search the entire file for ensemble headers
     while True:
@@ -39,17 +52,30 @@ def decode_bin(path):
                 ens_indexes.append(current_offset)
                 current_offset += ens_size
                 file.seek(current_offset)
-                continue
+                scan_progress.update(ens_size)
             else:
                 # Continue seeking
                 current_offset += 1
                 file.seek(current_offset)
+                scan_progress.update(1)
         else:
             # Continue seeking
             current_offset += 1
             file.seek(current_offset)
+            scan_progress.update(1)
 
-    print(f"{len(ens_indexes)} ensembles found, processing")
+    scan_progress.close()
+
+    # Progress bar for decoding and writing batches
+    decode_progress = tqdm(
+        total=len(ens_indexes),
+        desc="Decoding Ensembles",
+    )
+
+    batch_progress = tqdm(
+        total=len(ens_indexes) // batch_size + 1,
+        desc="Writing Batches"
+    )
 
     # Reset to head of file
     file.seek(0, 0)
@@ -62,6 +88,7 @@ def decode_bin(path):
     file.seek(ens_indexes[0], 0)
     ens_dat = file.read(numbytes)
     ens = Ensemble.from_bytes(ens_dat)
+    decode_progress.update(1)
 
     if not Ensemble.config:
         raise EnsembleFormatError(
@@ -88,12 +115,14 @@ def decode_bin(path):
         ens_dat = file.read(numbytes)
         ens = Ensemble.from_bytes(ens_dat)
         batch.append(ens)
+        decode_progress.update(1)
 
         if len(batch) == batch_size:
             writer.write_batch(batch)
             # Clear batch list and free up memory
             batch.clear()
             gc.collect()
+            batch_progress.update(1)
 
     # Write any leftover batches
     if batch:
@@ -101,6 +130,13 @@ def decode_bin(path):
         # Clear batch list and free up memory
         batch.clear()
         gc.collect()
+        batch_progress.update(1)
+
+    # Extra updates to force bars to render properly
+    decode_progress.update(1)
+    batch_progress.update(1)
+    decode_progress.close()
+    batch_progress.close()
 
 
 def config_file(fname: str, n_cells: int, cfg: Config):
@@ -248,6 +284,7 @@ def main():
         raise FileNotFoundError(f"Invalid Path Provided {path}")
 
     decode_bin(path)
+
 
 if __name__ == "__main__":
     main()
