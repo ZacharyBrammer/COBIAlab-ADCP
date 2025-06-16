@@ -60,6 +60,8 @@ def decode_bin(path):
         current_offset += 1
         scan_progress.update(1)
 
+    # Needed to finish scan bar since never actually reaches last byte of file
+    scan_progress.n = scan_progress.total + 1
     scan_progress.close()
 
     # Progress bar for decoding and writing batches
@@ -75,16 +77,12 @@ def decode_bin(path):
         desc="Writing Batches"
     )
 
-    # Reset to head of file
-    file.seek(0, 0)
-
     # Get the length of an ensemble
-    file.seek(ens_indexes[0] + 2, 0)
-    numbytes = struct.unpack("<h", file.read(2))[0]
+    offset = ens_indexes[0]
+    numbytes = struct.unpack("<h", mm[offset + 2:offset + 4])[0]
 
     # Decode the first ensemble to get config and structure data
-    file.seek(ens_indexes[0], 0)
-    ens_dat = file.read(numbytes)
+    ens_dat = mm[offset:offset + numbytes]
     ens = Ensemble.from_bytes(ens_dat)
     decode_progress.update(1)
 
@@ -109,8 +107,7 @@ def decode_bin(path):
 
     # For all ensembles, create object and write batches to file
     for i in range(1, len(ens_indexes)):
-        file.seek(ens_indexes[i], 0)
-        ens_dat = file.read(numbytes)
+        ens_dat = mm[ens_indexes[i]:ens_indexes[i] + numbytes]
         ens = Ensemble.from_bytes(ens_dat)
         batch.append(ens)
         decode_progress.update(1)
@@ -135,7 +132,8 @@ def decode_bin(path):
     batch_progress.update(1)
     decode_progress.close()
     batch_progress.close()
-
+    
+    mm.close()
     file.close()
 
 
