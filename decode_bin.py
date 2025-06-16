@@ -22,6 +22,7 @@ def decode_bin(path):
     
     # Create a memory map for faster access than just the file
     mm = mmap.mmap(file.fileno(), length=0, access=mmap.ACCESS_READ)
+    file.close()
 
     # List for storing start index of each ensamble
     ens_indexes = []
@@ -134,7 +135,6 @@ def decode_bin(path):
     batch_progress.close()
     
     mm.close()
-    file.close()
 
 
 def config_file(fname: str, n_cells: int, cfg: Config):
