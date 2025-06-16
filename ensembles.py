@@ -39,8 +39,7 @@ class Config:
         c = cls()
 
         # Check ID
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=0)
-        if cfgid[0] != 0 or cfgid[1] != 0:
+        if bytes[0] != 0 or bytes[1] != 0:
             raise EnsembleFormatError("Config ID not at expected index")
 
         prog_ver = struct.unpack("2B", bytes[2:4])
@@ -107,11 +106,8 @@ class Ensemble:
     def from_bytes(cls, bytes):
         e = cls()
 
-        # Read header
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2)
-
         # Check that the header matches
-        if cfgid[0] != 127 or cfgid[1] != 127:
+        if bytes[0] != 127 or bytes[1] != 127:
             raise EnsembleFormatError("Header not at expected index")
 
         # numbytes = bytes[2:4]
@@ -132,8 +128,7 @@ class Ensemble:
         offset = dat_offsets[1]
 
         # Check ID (Bytes 1, 2)
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
-        if cfgid[0] != 128 or cfgid[1] != 0:
+        if bytes[offset] != 128 or bytes[offset+1] != 0:
             raise EnsembleFormatError("Variable leader not at expected index")
         offset += 2
 
@@ -188,8 +183,7 @@ class Ensemble:
         offset = dat_offsets[2]
 
         # Check ID (Bytes 1, 2)
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
-        if cfgid[0] != 0 or cfgid[1] != 1:
+        if bytes[offset] != 0 or bytes[offset+1] != 1:
             raise EnsembleFormatError("Velocity ID not at expected index")
         offset += 2
 
@@ -204,8 +198,7 @@ class Ensemble:
         offset = dat_offsets[4]
 
         # Check ID (Bytes 1, 2)
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
-        if cfgid[0] != 0 or cfgid[1] != 2:
+        if bytes[offset] != 0 or bytes[offset+1] != 2:
             raise EnsembleFormatError("Correlation ID not at expected index")
         offset += 2
 
@@ -218,8 +211,7 @@ class Ensemble:
         offset = dat_offsets[5]
 
         # Check ID (Bytes 1, 2)
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
-        if cfgid[0] != 0 or cfgid[1] != 3:
+        if bytes[offset] != 0 or bytes[offset+1] != 3:
             raise EnsembleFormatError("Echo ID not at expected index")
         offset += 2
 
@@ -232,8 +224,7 @@ class Ensemble:
         offset = dat_offsets[6]
 
         # Check ID (Bytes 1, 2)
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
-        if cfgid[0] != 0 or cfgid[1] != 4:
+        if bytes[offset] != 0 or bytes[offset+1] != 4:
             raise EnsembleFormatError("Percent good ID not at expected index")
         offset += 2
 
@@ -246,8 +237,7 @@ class Ensemble:
         offset = dat_offsets[10]
 
         # Check ID (Bytes 1, 2)
-        cfgid = np.frombuffer(bytes, dtype=np.uint8, count=2, offset=offset)
-        if cfgid[0] != 0 or cfgid[1] != 64:
+        if bytes[offset] != 0 or bytes[offset+1] != 64:
             raise EnsembleFormatError("Surface track ID not at expected index")
         offset += 2
 
