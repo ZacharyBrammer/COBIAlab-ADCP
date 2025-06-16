@@ -69,11 +69,13 @@ def decode_bin(path):
     # Progress bar for decoding and writing batches
     decode_progress = tqdm(
         total=len(ens_indexes),
+        unit=" Ensembles",
         desc="Decoding Ensembles",
     )
 
     batch_progress = tqdm(
         total=len(ens_indexes) // batch_size + 1,
+        unit=" Batches",
         desc="Writing Batches"
     )
 

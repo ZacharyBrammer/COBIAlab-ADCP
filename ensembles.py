@@ -356,7 +356,6 @@ class EnsembleWriter:
                     ds[current_size:new_size, ...] = arr[:batch_len]
 
 
-# TODO: Add these whenever checking cfgid to make sure data headers match up
 class EnsembleFormatError(Exception):
     """Raised when ensemble configuration is missing or invalid, other formatting errors"""
     pass
