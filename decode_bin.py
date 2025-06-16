@@ -2,6 +2,7 @@ import argparse
 import gc
 import os
 import struct
+import mmap
 
 import h5py
 from tqdm import tqdm
@@ -17,9 +18,10 @@ batch_size = 4096
 def decode_bin(path):
     file = open(path, "rb")
     # Get file size for progress bar
-    file.seek(0, 2)
-    file_size = file.tell()
-    file.seek(0)
+    file_size = os.path.getsize(path)
+    
+    # Create a memory map for faster access than just the file
+    mm = mmap.mmap(file.fileno(), length=0, access=mmap.ACCESS_READ)
 
     # List for storing start index of each ensamble
     ens_indexes = []
@@ -34,13 +36,13 @@ def decode_bin(path):
     )
 
     # Search the entire file for ensemble headers
-    while True:
+    while current_offset < file_size:
+        # not enough bytes left for a header
+        if current_offset + 4 > file_size:
+                break
+        
         # Get header ID, source ID, and numbytes
-        header = file.read(4)
-
-        # End of file check
-        if len(header) < 4:
-            break
+        header = mm[current_offset:current_offset + 4]
 
         # If the two start bytes are right (two 7f bytes in a row)
         if header[0] == 0x7f and header[1] == 0x7f:
@@ -48,21 +50,15 @@ def decode_bin(path):
             ens_size = header[2] + (header[3] << 8) + 2
 
             # If size is within expected bounds (removes potential errors from random 7f7f data)
-            if 32 <= ens_size <= 4096:
+            if 32 <= ens_size <= 4096 and current_offset + ens_size <= file_size:
                 ens_indexes.append(current_offset)
                 current_offset += ens_size
-                file.seek(current_offset)
                 scan_progress.update(ens_size)
-            else:
-                # Continue seeking
-                current_offset += 1
-                file.seek(current_offset)
-                scan_progress.update(1)
-        else:
-            # Continue seeking
-            current_offset += 1
-            file.seek(current_offset)
-            scan_progress.update(1)
+                continue
+
+        # Continue seeking
+        current_offset += 1
+        scan_progress.update(1)
 
     scan_progress.close()
 
@@ -139,6 +135,8 @@ def decode_bin(path):
     batch_progress.update(1)
     decode_progress.close()
     batch_progress.close()
+
+    file.close()
 
 
 def config_file(fname: str, n_cells: int, cfg: Config):
