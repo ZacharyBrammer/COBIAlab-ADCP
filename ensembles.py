@@ -70,7 +70,7 @@ class Config:
         return c
 
 
-@dataclass
+@dataclass(slots=True)
 class Ensemble:
     """Class for storing and decoding ensemble data"""
     config: ClassVar[Optional[Config]] = None
@@ -133,45 +133,31 @@ class Ensemble:
         offset += 2
 
         # Number is made up of bytes 3 and 4, with byte 12 for rollover
-        number = np.frombuffer(bytes, dtype=np.uint16,
-                               count=1, offset=offset)[0]
+        number = np.uint16(struct.unpack_from('<H', bytes, offset)[0])
         # Bitwise shift is faster and easier than multiplying and adding
         e.number = np.uint32((bytes[11] << 16) | number)
         offset += 2
 
         # Real time clock (Bytes 5-11)
-        rtc = np.frombuffer(bytes, dtype=np.uint8, count=7, offset=offset)
-        e.mtime = np.uint32(calendar.timegm((
-            int(rtc[0]) + 2000,
-            int(rtc[1]),
-            int(rtc[2]),
-            int(rtc[3]),
-            int(rtc[4]),
-            int(rtc[5]),
-            0, 0, 0
-        )))
+        year, mon, day, hour, minute, second, _ = struct.unpack_from('<7B', bytes, offset)
+        rtc_tuple = (year + 2000, mon, day, hour, minute, second)
+        e.mtime = np.uint32(calendar.timegm(rtc_tuple))
         offset += 12  # RTC length + 5 unused bytes
 
         # Depth (Bytes 17, 18)
-        e.depth = np.frombuffer(bytes, dtype=np.uint16,
-                                count=1, offset=offset)[0]
+        e.depth = np.uint16(struct.unpack_from('<H', bytes, offset)[0])
         offset += 8  # depth length + 6 unused bytes
 
-        # Salinity (Bytes 25, 26)
-        e.salinity = np.frombuffer(
-            bytes, dtype=np.int16, count=1, offset=offset)[0]
-        offset += 2
-
-        # Temperature (Bytes 27, 28)
-        e.temperature = np.frombuffer(
-            bytes, dtype=np.int16, count=1, offset=offset)[0]
-        offset += 2
+        # Salinity (Bytes 25, 26) and Temperature (Bytes 27, 28)
+        sal, temp = struct.unpack_from('<hh', bytes, offset)
+        e.salinity = np.int16(sal)
+        e.temperature = np.int16(temp)
+        offset += 4
 
         # Sleep (Bytes 29-31)
-        sleep = np.frombuffer(bytes, dtype=np.uint8, count=3,
-                              offset=offset).astype(np.uint32)
+        sleep = bytes[offset:offset+3]
         # Converts to centi-seconds (hundredths are smallest value in data)
-        e.mpt = sleep[0] * 6000 + sleep[1] * 100 + sleep[2]
+        e.mpt = np.uint32(sleep[0] * 6000 + sleep[1] * 100 + sleep[2])
         offset += 12  # sleep length + 9 unused bytes
 
         # Battery voltage (Byte 41)
@@ -188,11 +174,10 @@ class Ensemble:
         offset += 2
 
         # Velocity data (Bytes 3-4 * n_cells)
-        vels = np.frombuffer(bytes, dtype=np.int16, count=4 *
-                             n_cells, offset=offset).reshape((n_cells, 4))
-        e.x_vel = vels[:, 0]
-        e.y_vel = vels[:, 1]
-        e.z_vel = vels[:, 2]
+        vels = np.frombuffer(bytes, dtype=np.int16, count=4 * n_cells, offset=offset)
+        e.x_vel = vels[0::4]
+        e.y_vel = vels[1::4]
+        e.z_vel = vels[2::4]
 
         # Correlation data
         offset = dat_offsets[4]
@@ -203,9 +188,12 @@ class Ensemble:
         offset += 2
 
         # Correlation data (Bytes 3-4 * n_cells)
-        corr = np.frombuffer(bytes, dtype=np.uint8, count=4 *
-                             n_cells, offset=offset).reshape((n_cells, 4))
-        e.corr = corr[:, 0:3]
+        corr_flat = np.frombuffer(bytes, dtype=np.uint8, count=4 * n_cells, offset=offset)
+        corr = np.empty((n_cells, 3), dtype=np.uint8)
+        corr[:, 0] = corr_flat[0::4]
+        corr[:, 1] = corr_flat[1::4]
+        corr[:, 2] = corr_flat[2::4]
+        e.corr = corr
 
         # Intensity data
         offset = dat_offsets[5]
@@ -216,9 +204,12 @@ class Ensemble:
         offset += 2
 
         # Intensity data (Bytes 3-4 * n_cells)
-        intens = np.frombuffer(
-            bytes, dtype=np.uint8, count=4 * n_cells, offset=offset).reshape((n_cells, 4))
-        e.intens = intens[:, 0:3]
+        intens_flat = np.frombuffer(bytes, dtype=np.uint8, count=4 * n_cells, offset=offset)
+        intens = np.empty((n_cells, 3), dtype=np.uint8)
+        intens[:, 0] = intens_flat[0::4]
+        intens[:, 1] = intens_flat[1::4]
+        intens[:, 2] = intens_flat[2::4]
+        e.intens = intens
 
         # Percent good data
         offset = dat_offsets[6]
@@ -229,9 +220,12 @@ class Ensemble:
         offset += 2
 
         # Percent good data (Bytes 3-4 * n_cells)
-        perc_good = np.frombuffer(
-            bytes, dtype=np.uint8, count=4 * n_cells, offset=offset).reshape((n_cells, 4))
-        e.perc_good = perc_good[:, 0:3]
+        perc_good_flat = np.frombuffer(bytes, dtype=np.uint8, count=4 * n_cells, offset=offset)
+        perc_good = np.empty((n_cells, 3), dtype=np.uint8)
+        perc_good[:, 0] = perc_good_flat[0::4]
+        perc_good[:, 1] = perc_good_flat[1::4]
+        perc_good[:, 2] = perc_good_flat[2::4]
+        e.perc_good = perc_good
 
         # Surface track data
         offset = dat_offsets[10]
@@ -241,15 +235,15 @@ class Ensemble:
             raise EnsembleFormatError("Surface track ID not at expected index")
         offset += 2
 
+        # Surface track data
+        surface_track = struct.unpack_from('<II', bytes, offset)
+        offset += 9  # Surface track lengths + 1 unused byte
+
         # Surface track (Bytes 3-6)
-        e.surface_track = np.frombuffer(
-            bytes, dtype=np.uint32, count=1, offset=offset)[0]
-        offset += 4
+        e.surface_track = surface_track[0]
 
         # Uncorrected surface track (Bytes 7-10)
-        e.surface_track_uncorr = np.frombuffer(
-            bytes, dtype=np.uint32, count=1, offset=offset)[0]
-        offset += 5  # ununcorrected surface length + 1 unused byte
+        e.surface_track_uncorr = surface_track[1]
 
         # Amplitude at surface (Byte 12)
         e.v_amp = np.uint8(bytes[offset])

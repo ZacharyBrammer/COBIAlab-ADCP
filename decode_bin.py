@@ -167,7 +167,7 @@ def config_file(fname: str, n_cells: int, cfg: Config):
         cfg_group.attrs.create("bandwidth", data=cfg.bandwidth)
         cfg_group.attrs.create("syspower", data=cfg.syspower)
         cfg_group.attrs.create("sernum", data=cfg.sernum)
-        ds = cfg_group.create_dataset("ranges", data=cfg.ranges)
+        cfg_group.create_dataset("ranges", data=cfg.ranges, dtype="float")
 
         # Ensemble data
         ens_group = f.create_group("ensembles")
