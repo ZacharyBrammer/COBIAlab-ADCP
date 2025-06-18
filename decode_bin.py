@@ -1,5 +1,4 @@
 import argparse
-import gc
 import os
 import struct
 import mmap
@@ -98,7 +97,7 @@ def decode_bin(path):
     fname = f"{path[:-4]}.hdf5"
 
     # Set up structure of HDF5 file
-    config_file(fname, n_cells, cfg)
+    config_file(fname, n_cells, len(ens_indexes), cfg)
 
     # List for storing ensembles, add first ensemble
     batch = []
@@ -106,27 +105,27 @@ def decode_bin(path):
 
     writer = EnsembleWriter(fname, batch_size, n_cells)
 
-    # For all ensembles, create object and write batches to file
-    for i in range(1, len(ens_indexes)):
-        ens_dat = mm[ens_indexes[i]:ens_indexes[i] + numbytes]
-        ens = Ensemble.from_bytes(ens_dat)
-        batch.append(ens)
-        decode_progress.update(1)
+    with h5py.File(fname, "a") as f:
+        writer.initialize_datasets(f)
+        # For all ensembles, create object and write batches to file
+        for i in range(1, len(ens_indexes)):
+            ens_dat = mm[ens_indexes[i]:ens_indexes[i] + numbytes]
+            ens = Ensemble.from_bytes(ens_dat)
+            batch.append(ens)
+            decode_progress.update(1)
 
-        if len(batch) == batch_size:
-            writer.write_batch(batch)
-            # Clear batch list and free up memory
-            batch.clear()
-            gc.collect()
+            if len(batch) == batch_size:
+                writer.write_batch(batch, f)
+                # Clear batch list
+                batch[:] = []
+                batch_progress.update(1)
+
+        # Write any leftover batches
+        if batch:
+            writer.write_batch(batch, f)
+            # Clear batch list
+            batch[:] = []
             batch_progress.update(1)
-
-    # Write any leftover batches
-    if batch:
-        writer.write_batch(batch)
-        # Clear batch list and free up memory
-        batch.clear()
-        gc.collect()
-        batch_progress.update(1)
 
     # Extra updates to force bars to render properly
     decode_progress.update(1)
@@ -137,7 +136,7 @@ def decode_bin(path):
     mm.close()
 
 
-def config_file(fname: str, n_cells: int, cfg: Config):
+def config_file(fname: str, n_cells: int, n_ens: int, cfg: Config):
     """Helper function for creating file to clean up main function a bit"""
     with h5py.File(fname, "w") as f:
         # Config data
@@ -173,80 +172,80 @@ def config_file(fname: str, n_cells: int, cfg: Config):
         ens_group = f.create_group("ensembles")
 
         ds = ens_group.create_dataset("number", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="1", long_name="Ensemble Number")
 
         ds = ens_group.create_dataset("mtime", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="seconds", long_name="Time")
 
         ds = ens_group.create_dataset("depth", shape=(
-            0,), dtype="uint16", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint16", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="meters",
                      long_name="Transducer Depth", scale_factor=0.1)
 
         ds = ens_group.create_dataset("salinity", shape=(
-            0,), dtype="int16", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="int16", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="ppt", long_name="Water Salinity")
 
         ds = ens_group.create_dataset("temperature", shape=(
-            0,), dtype="int16", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="int16", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="degrees C",
                      long_name="Water Temperature", scale_factor=0.01)
 
         ds = ens_group.create_dataset("mpt", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="seconds",
                      long_name="Sleep Duration", scale_factor=0.01)
 
         ds = ens_group.create_dataset("voltage", shape=(
-            0,), dtype="uint8", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint8", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="volts",
                      long_name="Battery Voltage", scale_factor=0.157)
 
-        ds = ens_group.create_dataset("x_vel", shape=(0, n_cells), dtype="int16", chunks=(
+        ds = ens_group.create_dataset("x_vel", shape=(n_ens, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells), compression="gzip")
         add_metadata(ds, units="m/s",
                      long_name="X Horizontal Velocity", scale_factor=0.001)
 
-        ds = ens_group.create_dataset("y_vel", shape=(0, n_cells), dtype="int16", chunks=(
+        ds = ens_group.create_dataset("y_vel", shape=(n_ens, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells), compression="gzip")
         add_metadata(ds, units="m/s",
                      long_name="Y Horizontal Velocity", scale_factor=0.001)
 
-        ds = ens_group.create_dataset("z_vel", shape=(0, n_cells), dtype="int16", chunks=(
+        ds = ens_group.create_dataset("z_vel", shape=(n_ens, n_cells), dtype="int16", chunks=(
             batch_size, n_cells), maxshape=(None, n_cells), compression="gzip")
         add_metadata(ds, units="m/s",
                      long_name="Z Vertical Velocity", scale_factor=0.001)
 
-        ds = ens_group.create_dataset("corr", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+        ds = ens_group.create_dataset("corr", shape=(n_ens, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3), compression="gzip")
         add_metadata(ds, units="1", long_name="Correlation Magnitude")
 
-        ds = ens_group.create_dataset("intens", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+        ds = ens_group.create_dataset("intens", shape=(n_ens, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3), compression="gzip")
         add_metadata(ds, units="1", long_name="Echo Intensity")
 
-        ds = ens_group.create_dataset("perc_good", shape=(0, n_cells, 3), dtype="uint8", chunks=(
+        ds = ens_group.create_dataset("perc_good", shape=(n_ens, n_cells, 3), dtype="uint8", chunks=(
             batch_size, n_cells, 3), maxshape=(None, n_cells, 3), compression="gzip")
         add_metadata(ds, units="percent", long_name="Percentage of Good Pings")
 
         ds = ens_group.create_dataset("surface_track", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="meters",
                      long_name="Corrected Depth from Surface Track", scale_factor=0.0001)
 
         ds = ens_group.create_dataset("surface_track_uncorr", shape=(
-            0,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint32", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="meters",
                      long_name="Uncorrected Depth from Surface Track", scale_factor=0.0001)
 
         ds = ens_group.create_dataset("v_amp", shape=(
-            0,), dtype="uint8", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint8", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="1", long_name="Signal Amplitude at Surface")
 
         ds = ens_group.create_dataset("v_pgood", shape=(
-            0,), dtype="uint8", chunks=batch_size, maxshape=(None,), compression="gzip")
+            n_ens,), dtype="uint8", chunks=batch_size, maxshape=(None,), compression="gzip")
         add_metadata(ds, units="percent",
                      long_name="Percentage Good of Surface Track")
 

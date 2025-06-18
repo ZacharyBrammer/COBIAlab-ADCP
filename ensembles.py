@@ -75,9 +75,6 @@ class Ensemble:
     """Class for storing and decoding ensemble data"""
     config: ClassVar[Optional[Config]] = None
     config_length: ClassVar[int] = 58  # Fixed length from operation manual
-    datatypes: int = 0
-    dat_offsets: np.ndarray = field(
-        default_factory=lambda: np.zeros(1, dtype=np.int16))
     number: np.uint32 = np.uint32(0)
     mtime: np.uint32 = np.uint32(0)
     depth: np.uint16 = np.uint16(0)
@@ -112,10 +109,8 @@ class Ensemble:
 
         # numbytes = bytes[2:4]
         datatypes = bytes[5]
-        e.datatypes = datatypes
 
         dat_offsets = np.frombuffer(bytes, np.int16, count=datatypes, offset=6)
-        e.dat_offsets = dat_offsets
 
         # If config data is missing, set
         if not cls.config:
@@ -133,9 +128,8 @@ class Ensemble:
         offset += 2
 
         # Number is made up of bytes 3 and 4, with byte 12 for rollover
-        number = np.uint16(struct.unpack_from('<H', bytes, offset)[0])
         # Bitwise shift is faster and easier than multiplying and adding
-        e.number = np.uint32((bytes[11] << 16) | number)
+        e.number = np.uint32((bytes[11] << 16) | bytes[offset] | (bytes[offset + 1] << 8))
         offset += 2
 
         # Real time clock (Bytes 5-11)
@@ -145,13 +139,12 @@ class Ensemble:
         offset += 12  # RTC length + 5 unused bytes
 
         # Depth (Bytes 17, 18)
-        e.depth = np.uint16(struct.unpack_from('<H', bytes, offset)[0])
+        e.depth = np.uint16(bytes[offset] | (bytes[offset + 1] << 8))
         offset += 8  # depth length + 6 unused bytes
 
         # Salinity (Bytes 25, 26) and Temperature (Bytes 27, 28)
-        sal, temp = struct.unpack_from('<hh', bytes, offset)
-        e.salinity = np.int16(sal)
-        e.temperature = np.int16(temp)
+        e.salinity = np.int16(bytes[offset] | (bytes[offset + 1] << 8))
+        e.temperature = np.int16(bytes[offset + 2] | (bytes[offset + 3] << 8))
         offset += 4
 
         # Sleep (Bytes 29-31)
@@ -284,30 +277,40 @@ class EnsembleWriter:
             "v_pgood": np.empty(batch_size, dtype=np.uint8),
         }
 
+        self.datasets: Dict[str, h5py.Dataset] = {}
+        self.current_size: int = 0
+    
+    def initialize_datasets(self, f: h5py.File):
+        """Cache dataset handles from the 'ensembles' group and track current write position."""
+        group = cast(h5py.Group, f["ensembles"])
+        self.datasets = {str(name): cast(h5py.Dataset, group[name]) for name in group}
+        self.current_size = 0
+
     def fill_arrays_from_batch(self, batch: List[Ensemble]):
-        for i, e in enumerate(batch):
-            self.arrays["number"][i] = e.number
-            self.arrays["mtime"][i] = e.mtime
-            self.arrays["depth"][i] = e.depth
-            self.arrays["salinity"][i] = e.salinity
-            self.arrays["temperature"][i] = e.temperature
-            self.arrays["mpt"][i] = e.mpt
-            self.arrays["voltage"][i] = e.voltage
+        # Get length of batch
+        batch_len = len(batch)
 
-            self.arrays["x_vel"][i, :] = e.x_vel
-            self.arrays["y_vel"][i, :] = e.y_vel
-            self.arrays["z_vel"][i, :] = e.z_vel
+        self.arrays["number"][:batch_len] = np.fromiter((e.number for e in batch), dtype=np.uint32, count=batch_len)
+        self.arrays["mtime"][:batch_len] = np.fromiter((e.mtime for e in batch), dtype=np.uint32, count=batch_len)
+        self.arrays["depth"][:batch_len] = np.fromiter((e.depth for e in batch), dtype=np.uint16, count=batch_len)
+        self.arrays["salinity"][:batch_len] = np.fromiter((e.salinity for e in batch), dtype=np.int16, count=batch_len)
+        self.arrays["temperature"][:batch_len] = np.fromiter((e.temperature for e in batch), dtype=np.int16, count=batch_len)
+        self.arrays["mpt"][:batch_len] = np.fromiter((e.mpt for e in batch), dtype=np.uint32, count=batch_len)
+        self.arrays["voltage"][:batch_len] = np.fromiter((e.voltage for e in batch), dtype=np.uint8, count=batch_len)
+        self.arrays["surface_track"][:batch_len] = np.fromiter((e.surface_track for e in batch), dtype=np.uint32, count=batch_len)
+        self.arrays["surface_track_uncorr"][:batch_len] = np.fromiter((e.surface_track_uncorr for e in batch), dtype=np.uint32, count=batch_len)
+        self.arrays["v_amp"][:batch_len] = np.fromiter((e.v_amp for e in batch), dtype=np.uint8, count=batch_len)
+        self.arrays["v_pgood"][:batch_len] = np.fromiter((e.v_pgood for e in batch), dtype=np.uint8, count=batch_len)
 
-            self.arrays["corr"][i, :, :] = e.corr
-            self.arrays["intens"][i, :, :] = e.intens
-            self.arrays["perc_good"][i, :, :] = e.perc_good
+        # Stack 2D and 3D arrays
+        self.arrays["x_vel"][:batch_len, :] = np.stack([e.x_vel for e in batch])
+        self.arrays["y_vel"][:batch_len, :] = np.stack([e.y_vel for e in batch])
+        self.arrays["z_vel"][:batch_len, :] = np.stack([e.z_vel for e in batch])
+        self.arrays["corr"][:batch_len, :, :] = np.stack([e.corr for e in batch])
+        self.arrays["intens"][:batch_len, :, :] = np.stack([e.intens for e in batch])
+        self.arrays["perc_good"][:batch_len, :, :] = np.stack([e.perc_good for e in batch])
 
-            self.arrays["surface_track"][i] = e.surface_track
-            self.arrays["surface_track_uncorr"][i] = e.surface_track_uncorr
-            self.arrays["v_amp"][i] = e.v_amp
-            self.arrays["v_pgood"][i] = e.v_pgood
-
-    def write_batch(self, batch: List[Ensemble]):
+    def write_batch(self, batch: List[Ensemble], f: h5py.File):
         batch_len = len(batch)
         if batch_len == 0:
             return
@@ -315,29 +318,20 @@ class EnsembleWriter:
         # Fill buffers with batch data
         self.fill_arrays_from_batch(batch)
 
-        with h5py.File(self.filename, "a") as f:
-            # Had to do cast stuff to get type checking to play nicely
-            ens_group = cast(h5py.Group, f["ensembles"])
+        # Get start and end indexes for datasets
+        start = self.current_size
+        end = start + batch_len
 
-            # Current size of datasets (all should be same length)
-            number_ds = cast(h5py.Dataset, ens_group["number"])
-            current_size = number_ds.shape[0]
-            new_size = current_size + batch_len
+        # Write slices
+        for name, arr in self.datasets.items():
+            ds = self.datasets[name]
+            if arr.ndim == 1:
+                ds[start:end] = ds[:batch_len]
+            else:
+                ds[start:end, ...] = ds[:batch_len]
 
-            # Resize datasets
-            for name in ens_group:
-                ds = cast(h5py.Dataset, ens_group[name])
-                shape = list(ds.shape)
-                shape[0] = new_size
-                ds.resize(tuple(shape))
-
-            # Write data slice
-            for name, arr in self.arrays.items():
-                ds = cast(h5py.Dataset, ens_group[name])
-                if arr.ndim == 1:
-                    ds[current_size:new_size] = arr[:batch_len]
-                else:
-                    ds[current_size:new_size, ...] = arr[:batch_len]
+        # Update size
+        self.current_size = end
 
 
 class EnsembleFormatError(Exception):
