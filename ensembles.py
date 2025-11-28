@@ -323,13 +323,14 @@ class EnsembleWriter:
         end = start + batch_len
 
         # Write slices
-        for name, arr in self.datasets.items():
-            ds = self.datasets[name]
-            if arr.ndim == 1:
-                ds[start:end] = ds[:batch_len]
-            else:
-                ds[start:end, ...] = ds[:batch_len]
+        for name, ds in self.datasets.items():
+            buf = self.arrays[name]
 
+            if buf.ndim == 1:
+                ds[start:end] = buf[:batch_len]
+            else:
+                ds[start:end, ...] = buf[:batch_len, ...]
+        
         # Update size
         self.current_size = end
 

@@ -108,24 +108,32 @@ def decode_bin(path):
     with h5py.File(fname, "a") as f:
         writer.initialize_datasets(f)
         # For all ensembles, create object and write batches to file
+        skipped = 0
         for i in range(1, len(ens_indexes)):
-            ens_dat = mm[ens_indexes[i]:ens_indexes[i] + numbytes]
-            ens = Ensemble.from_bytes(ens_dat)
-            batch.append(ens)
-            decode_progress.update(1)
+            try:
+                ens_dat = mm[ens_indexes[i]:ens_indexes[i] + numbytes]
+                ens = Ensemble.from_bytes(ens_dat)
+                batch.append(ens)
+            except (EnsembleFormatError, IndexError, ValueError, struct.error) as e:
+                skipped += 1
+                # You can uncomment the next line for debugging:
+                # tqdm.write(f"Skipped ensemble at index {i}: {e}")
+                continue
+            finally:
+                decode_progress.update(1)
 
             if len(batch) == batch_size:
                 writer.write_batch(batch, f)
-                # Clear batch list
                 batch[:] = []
                 batch_progress.update(1)
 
-        # Write any leftover batches
+        # Write any leftovers
         if batch:
             writer.write_batch(batch, f)
-            # Clear batch list
             batch[:] = []
             batch_progress.update(1)
+
+        decode_progress.set_description(f"Decoding Ensembles (Skipped {skipped})")
 
     # Extra updates to force bars to render properly
     decode_progress.update(1)
