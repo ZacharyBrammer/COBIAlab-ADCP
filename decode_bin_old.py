@@ -6,7 +6,7 @@ import mmap
 from netCDF4 import Dataset
 from tqdm import tqdm
 
-from ensembles import Config, Ensemble, EnsembleFormatError, EnsembleWriter
+from ensembles_old import Config, Ensemble, EnsembleFormatError, EnsembleWriter
 
 # Variable for batch writing size. Value was determined by benchmarking.
 # With 4096 max sized ensembles that would be ~3MB of data in RAM, which any modern system should be capable of
@@ -186,7 +186,7 @@ def config_file(fname: str, n_cells: int, n_ens: int, cfg: Config):
         ens_group = ds.createGroup("ensembles")
 
         # Helper for creating variables with compression and metadata
-        def create_ens_var(name, dtype, dims, chunks, units=None, long_name=None):
+        def create_ens_var(name, dtype, dims, chunks, units=None, long_name=None, scale_factor=None):
             var = ens_group.createVariable(
                 name,
                 dtype,
@@ -198,69 +198,63 @@ def config_file(fname: str, n_cells: int, n_ens: int, cfg: Config):
                 var.units = units
             if long_name is not None:
                 var.long_name = long_name
-        
+            if scale_factor is not None:
+                var.vadcp_scale_factor = scale_factor
             return var
 
         # 1D ensemble variables
         create_ens_var("number", "u4", ("ensemble",), (batch_size,),
-                    units="1", long_name="Ensemble Number")
+                       units="1", long_name="Ensemble Number")
 
         create_ens_var("mtime", "u4", ("ensemble",), (batch_size,),
-                    units="seconds", long_name="Time")
+                       units="seconds", long_name="Time")
 
-        # CHANGED: depth → float32 meters
-        create_ens_var("depth", "f4", ("ensemble",), (batch_size,),
-                    units="meters", long_name="Transducer Depth")
+        create_ens_var("depth", "u2", ("ensemble",), (batch_size,),
+                       units="meters", long_name="Transducer Depth", scale_factor=0.1)
 
         create_ens_var("salinity", "i2", ("ensemble",), (batch_size,),
-                    units="ppt", long_name="Water Salinity")
+                       units="ppt", long_name="Water Salinity")
 
-        # CHANGED: temperature → float32 °C
-        create_ens_var("temperature", "f4", ("ensemble",), (batch_size,),
-                    units="degrees C", long_name="Water Temperature")
+        create_ens_var("temperature", "i2", ("ensemble",), (batch_size,),
+                       units="degrees C", long_name="Water Temperature", scale_factor=0.01)
 
-        # CHANGED: mpt → float32 seconds
-        create_ens_var("mpt", "f4", ("ensemble",), (batch_size,),
-                    units="seconds", long_name="Sleep Duration")
+        create_ens_var("mpt", "u4", ("ensemble",), (batch_size,),
+                       units="seconds", long_name="Sleep Duration", scale_factor=0.01)
 
-        # CHANGED: voltage → float32 volts
-        create_ens_var("voltage", "f4", ("ensemble",), (batch_size,),
-                    units="volts", long_name="Battery Voltage")
+        create_ens_var("voltage", "u1", ("ensemble",), (batch_size,),
+                       units="volts", long_name="Battery Voltage", scale_factor=0.157)
 
         # 2D variables (ensemble, cell)
-        # CHANGED: velocities → float32 m/s
-        create_ens_var("x_vel", "f4", ("ensemble", "cell"), (batch_size, n_cells),
-                    units="m/s", long_name="X Horizontal Velocity")
+        create_ens_var("x_vel", "i2", ("ensemble", "cell"), (batch_size, n_cells),
+                       units="m/s", long_name="X Horizontal Velocity", scale_factor=0.001)
 
-        create_ens_var("y_vel", "f4", ("ensemble", "cell"), (batch_size, n_cells),
-                    units="m/s", long_name="Y Horizontal Velocity")
+        create_ens_var("y_vel", "i2", ("ensemble", "cell"), (batch_size, n_cells),
+                       units="m/s", long_name="Y Horizontal Velocity", scale_factor=0.001)
 
-        create_ens_var("z_vel", "f4", ("ensemble", "cell"), (batch_size, n_cells),
-                    units="m/s", long_name="Z Vertical Velocity")
+        create_ens_var("z_vel", "i2", ("ensemble", "cell"), (batch_size, n_cells),
+                       units="m/s", long_name="Z Vertical Velocity", scale_factor=0.001)
 
-        # 3D variables (ensemble, cell, beam) – remain integers
+        # 3D variables (ensemble, cell, beam)
         create_ens_var("corr", "u1", ("ensemble", "cell", "beam"), (batch_size, n_cells, 3),
-                    units="1", long_name="Correlation Magnitude")
+                       units="1", long_name="Correlation Magnitude")
 
         create_ens_var("intens", "u1", ("ensemble", "cell", "beam"), (batch_size, n_cells, 3),
-                    units="1", long_name="Echo Intensity")
+                       units="1", long_name="Echo Intensity")
 
         create_ens_var("perc_good", "u1", ("ensemble", "cell", "beam"), (batch_size, n_cells, 3),
-                    units="percent", long_name="Percentage of Good Pings")
+                       units="percent", long_name="Percentage of Good Pings")
 
-        # CHANGED: surface_track → float32 meters
-        create_ens_var("surface_track", "f4", ("ensemble",), (batch_size,),
-                    units="meters", long_name="Corrected Depth from Surface Track")
+        create_ens_var("surface_track", "u4", ("ensemble",), (batch_size,),
+                       units="meters", long_name="Corrected Depth from Surface Track", scale_factor=0.0001)
 
-        create_ens_var("surface_track_uncorr", "f4", ("ensemble",), (batch_size,),
-                    units="meters", long_name="Uncorrected Depth from Surface Track")
+        create_ens_var("surface_track_uncorr", "u4", ("ensemble",), (batch_size,),
+                       units="meters", long_name="Uncorrected Depth from Surface Track", scale_factor=0.0001)
 
         create_ens_var("v_amp", "u1", ("ensemble",), (batch_size,),
-                    units="1", long_name="Signal Amplitude at Surface")
+                       units="1", long_name="Signal Amplitude at Surface")
 
         create_ens_var("v_pgood", "u1", ("ensemble",), (batch_size,),
-                    units="percent", long_name="Percentage Good of Surface Track")
-
+                       units="percent", long_name="Percentage Good of Surface Track")
 
 
 def main():

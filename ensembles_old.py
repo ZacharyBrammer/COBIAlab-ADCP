@@ -315,56 +315,24 @@ class EnsembleWriter:
         if batch_len == 0:
             return
 
-        # Fill buffers with batch data (integers / raw codes)
+        # Fill buffers with batch data
         self.fill_arrays_from_batch(batch)
 
         # Get start and end indexes for datasets
         start = self.current_size
         end = start + batch_len
 
-        v = self.variables
-        b = self.arrays
+        # Write slices
+        for name, var in self.variables.items():
+            buf = self.arrays[name]
 
-        # 1D variables
-        # number, mtime, salinity, corr, etc. are stored as raw ints
-        v["number"][start:end]   = b["number"][:batch_len]
-        v["mtime"][start:end]    = b["mtime"][:batch_len]
-        v["salinity"][start:end] = b["salinity"][:batch_len]
-
-        # depth: uint16 raw * 0.1 → meters (float32)
-        v["depth"][start:end] = b["depth"][:batch_len].astype("float32") * 0.1
-
-        # temperature: int16 raw * 0.01 → °C
-        v["temperature"][start:end] = b["temperature"][:batch_len].astype("float32") * 0.01
-
-        # mpt: uint32 raw * 0.01 → seconds
-        v["mpt"][start:end] = b["mpt"][:batch_len].astype("float32") * 0.01
-
-        # voltage: uint8 raw * 0.157 → volts
-        v["voltage"][start:end] = b["voltage"][:batch_len].astype("float32") * 0.157
-
-        # surface track: uint32 raw * 0.0001 → meters
-        v["surface_track"][start:end] = b["surface_track"][:batch_len].astype("float32") * 0.0001
-        v["surface_track_uncorr"][start:end] = b["surface_track_uncorr"][:batch_len].astype("float32") * 0.0001
-
-        # v_amp, v_pgood: remain uint8
-        v["v_amp"][start:end]   = b["v_amp"][:batch_len]
-        v["v_pgood"][start:end] = b["v_pgood"][:batch_len]
-
-        # 2D variables (ensemble, cell): velocities
-        # raw int16 * 0.001 → m/s (float32)
-        v["x_vel"][start:end, :] = b["x_vel"][:batch_len, :].astype("float32") * 0.001
-        v["y_vel"][start:end, :] = b["y_vel"][:batch_len, :].astype("float32") * 0.001
-        v["z_vel"][start:end, :] = b["z_vel"][:batch_len, :].astype("float32") * 0.001
-
-        # 3D variables (ensemble, cell, beam): correlation, intensity, percent good – raw uint8
-        v["corr"][start:end, :, :]      = b["corr"][:batch_len, :, :]
-        v["intens"][start:end, :, :]    = b["intens"][:batch_len, :, :]
-        v["perc_good"][start:end, :, :] = b["perc_good"][:batch_len, :, :]
-
+            if buf.ndim == 1:
+                var[start:end] = buf[:batch_len]
+            else:
+                var[start:end, ...] = buf[:batch_len, ...]
+        
         # Update size
         self.current_size = end
-
 
 
 class EnsembleFormatError(Exception):
